@@ -1,0 +1,196 @@
+---
+title: "Day 2 Assignment"
+author: "Muhammad Afiq Bin Mohamad Mansor"
+date: '2022-06-15'
+output: html_document
+---
+
+```{r}
+## Data preparation, Task
+
+pacman::p_load(tidyverse, lubridate, stringr, ggplot2, dplyr, tidyr, data.table, hrbrthemes)
+
+options(dplyr.summarise.inform = FALSE)
+
+df1 = read.csv('Lekagul Sensor Data.csv')
+
+df2 = read.csv('coordinates.csv')
+
+df3 = merge(df1, df2, by.df1 = gate.name, by.df2 = gate.name)
+   
+df = df3 %>%
+    rename(FromGate = gate.name) %>%
+    rename(FromTime = Timestamp) %>%
+    rename(Vehicle = car.type) %>%
+    rename(ID = car.id) %>%
+    mutate(FromTime = as_datetime(FromTime, format = "%d/%m/%Y %k:%M")) %>%
+    arrange(ID, FromTime) %>%
+    group_by(ID) %>%
+    mutate(ToGate = dplyr::lead(FromGate, n = 1, default = NA)) %>%
+    mutate(ToTime = dplyr::lead(FromTime, n = 1, default = NA)) %>%
+    dplyr::select(ID, Vehicle, X, Y, FromGate, ToGate, FromTime, ToTime) %>%
+    mutate(TimeElapsed = difftime(ToTime, FromTime, units = "mins")) %>%
+    mutate(Year = year(FromTime)) %>%
+    mutate(Month = months(FromTime)) %>%
+    mutate(Entry_Week = strftime(FromTime, format = "%V")) %>%
+    mutate(Entry_Week = as.numeric(Entry_Week)) %>%
+    mutate(Weekday = weekdays(FromTime, abbreviate = FALSE)) %>%
+    mutate(Hour = hour(FromTime)) %>%
+    na.omit(df3) %>%
+    distinct()
+
+```
+Sequence of data cleaning:
+- Required columns are renamed accordingly as per question. 
+- FromTime column is converted to date type. 
+- Data is arranged/ sorted by ID followed by FromTime in order to do subsequent lead function and calculations. 
+- Lead() function, mutate() function is used to create ToGate and ToTime columns.
+- Some rearranging of data is done. 
+- Add elapsed time column.
+- Adding of new date/ time element related columns using mutate() function.
+- Rows with 'NA' data are removed.
+- Check for and remove any duplicated whole rows using distinct() function. 
+
+```{r}
+## Sensor Hits by Week of Year
+
+df %>%
+    group_by(Year, Entry_Week) %>%
+    summarize(count = n()) %>%
+    ggplot(aes(x = Entry_Week, y = count)) +
+    geom_line(stat = "identity") +
+    facet_grid (~Year) +
+    labs(title = "Sensor Hits by Week of Year")
+
+```
+From the Sensor Hits by Week of Year plot above, we can see that the overall sensor hits are higher in 2015 than 2016 based on available data. The highest number of hits was in week 28 in 2015 with 8439 hits. This could be due to summer break where more visitors come to the preserve. The subsequent decline could be due to season changes i.e. end of summer through winter until early 2016.
+
+```{r}
+## Monthly Sensor Hits
+
+df %>%
+    mutate(Month = factor(Month, levels = c("January","February","March","April","May", "June","July","August","September","October", "November", "December"))) %>%
+    ggplot(aes(x=Month)) +
+    geom_bar() +
+    facet_grid (~Year) +
+    theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+    labs(title = "Monthly Sensor Hits")
+
+```
+From the Monthly Sensor Hits plot above, we can also see that the overall sensor hits are higher in 2015 than 2016 based on available data. The highest number of hits was in July in 2015. The June to August period seem to have the highest sensor hits in general. As mentioned before, this could be due to summer break period as the preserve gets more visitors for camping trips. The subsequent decline could be due to season changes i.e. end of summer through winter until early 2016.
+
+```{r}
+## Monthly Unique Visitors
+
+df %>%
+    dplyr::filter(FromGate %like% "^entrance") %>%
+    group_by(Year, Month) %>%
+    summarize(count = n()) %>%
+    mutate(Month = factor(Month, levels = c("January","February","March","April","May", "June","July","August","September","October", "November", "December"))) %>%
+    ggplot(aes(x=Month, y=count)) +
+    geom_bar(stat = "identity") +
+    facet_grid (~Year) +
+    theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+    labs(title = "Monthly Unique Visitors")
+
+```
+
+From the Monthly Unique Hits plot above, we can know the distinct number of visitors and rangers coming into the preserve. In general, the trend is the same as the previous 2 charts with July 2015 having the highest number of visitors, followed by August 2015 and June 2015.
+
+```{r}
+## Weekdays Traffic
+
+df %>%
+    mutate(YearMonth = str_c(Year, " ", Month)) %>%
+    group_by(YearMonth, Weekday) %>%
+    summarize(count = n()) %>%
+    mutate(YearMonth = factor(YearMonth, levels = c("2015 January","2015 February","2015 March","2015 April","2015 May", "2015 June","2015 July","2015 August","2015 September","2015 October", "2015 November", "2015 December", "2016 January","2016 February","2016 March","2016 April","2016 May", "2016 June","2016 July","2016 August","2016 September","2016 October", "2016 November", "2016 December"))) %>%
+    mutate(Weekday = factor(Weekday, levels = c("Friday","Monday","Saturday", "Sunday","Thursday","Tuesday", "Wednesday"))) %>%
+    ggplot(aes(x=Weekday, y=count)) +
+    geom_bar(stat = "identity") +
+    facet_wrap (~YearMonth) +
+    theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+    labs(title = "Weekdays Traffic")
+
+```
+
+Based on Weekdays Traffic plot, we can see that July/ August 2015 has the most traffic in general. Fridays in July 2015 in particular has the highest traffic count. This could be due to people going away on camping trips on the weekends during the summer break.
+
+```{r}
+## Traffic B/W Gates
+
+df %>%
+    group_by(FromGate, ToGate) %>%
+    summarize(weight = n()) %>%
+    ggplot(aes(x=FromGate, y=ToGate, fill= weight)) + 
+    geom_tile() +
+    scale_fill_gradient(low="yellow", high="red") +
+    theme(axis.text = element_text(size = 6.5)) +
+    theme(axis.text.x = element_text(angle = 45, hjust=1))+
+    labs(title = "Traffic B/W Gates", x = "From", y = "To")
+
+```
+Based on Traffic B/W Gates plot, General-Gate 1, General-Gate 2, Ranger-Stop 0 and Ranger-Stop 2 saw the highest traffic. This is probably due to Rangers carrying out their rounds in the Preserve in addition to public visitors. This is followed by General-Gate 4, General-Gate 5, General-Gate 7.
+
+```{r}
+## Hourly Reading Counts 2015
+
+df3 %>%
+    mutate(Timestamp = as_datetime(Timestamp, format = "%d/%m/%Y %k:%M")) %>%
+    mutate(Year = year(Timestamp)) %>%
+    mutate(Hour = hour(Timestamp)) %>%
+    dplyr::filter(Year == "2015") %>%
+    group_by(Year, gate.name, Hour) %>%
+    summarize(count = n()) %>%
+    ggplot(aes(x = Hour, y = count)) +
+    geom_line(stat = "identity") +
+    facet_wrap (~gate.name) +
+    theme(axis.text = element_text(size = 6)) +
+    theme(axis.text.x = element_text(angle = 45, hjust=1))+
+    labs(title = "Hourly Reading Counts 2015", x = "Aprox_Hr_Day")
+
+```
+Based on Hourly Reading Counts 2015 plot, General-Gate 1, General-Gate 2, Ranger-Stop 0 and Ranger-Stop 2, General-Gate 4, General-Gate 5, General-Gate 7 has the highest counts in general. Traffic or hits are mostly between 5am and around 6pm (~ 1800hr) based on the charts. (Note: df3 dataframe and original 'gate.name' column is used for this qn to account for some entrance gates not appearing in new columns - FromGate and ToGate after using lead() function.)
+
+```{r}
+## Extra - Time Elapsed by Camping Site
+
+df %>%  
+  dplyr::filter(ToGate %like% "camping") %>%
+  group_by(ToGate, TimeElapsed) %>%
+  ggplot(aes(x = ToGate, y = TimeElapsed)) +
+  geom_jitter(aes(color=ToGate), width = 0.5, alpha = 0.5)+
+  geom_hline(aes(yintercept = mean(TimeElapsed)), color = 'blue', size = 0.4) +
+  geom_text(aes(y = 221, x= 1.4, label = 'Mean'), color = 'darkgrey', size = 2) + 
+  labs(title = "TimeElapsed by Camping Site")
+
+```
+Based on Time Elapsed by Camping Site plot, Camping Sites 4, 2, 0, 2, 5 has some of the highest camping times. Looking at mean or average time spent on camping site, Camping Sites 5 has the highest mean average time spent there followed by Camping Site 2.
+
+## Qn4 Qns
+
+## Qn 4a Number of Unique Gates
+
+Based on Traffic B/W Gates plot earlier, we can see there are 17 unique gates.
+
+## Qn 4b Which gate has most hits
+
+General-Gate7 has the most hits.
+
+## Qn 4c Unique vehicles types
+
+1. 2 axle car (or motorcycle)
+2. 2 axle truck
+3. 3 axle truck
+4. 4 axle (and above) truck
+5. 2 axle bus
+6. 3 axle bus
+7. Park Service Preserve vehicles 2 axle truck
+
+## Qn 4d Number of unique vehicle types
+
+7 unique vehicles types including the Park Service Preserve vehicles which are only 2 axle trucks.
+
+## 4e Which vehicle gave the most sensor hits
+
+20154519024544-322 (2 axle truck) gave the most sensor hits with 280 hits.
